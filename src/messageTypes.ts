@@ -8,6 +8,7 @@ type ServerToClientMessage =
 interface LoginAccepted {
   type: "loginAccepted"
   username: string
+  admin: boolean
 }
 
 interface LoginRejected {
@@ -52,7 +53,7 @@ interface QuestResults {
 
 // Client to server messages
 
-type ClientToServerMessage = LoginRequest | SetReadyState | PickQuest | QuestChoice
+type ClientToServerMessage = LoginRequest | SetReadyState | RequestGameStart | PickQuest | QuestChoice
 
 interface LoginRequest {
   type: "loginRequest"
@@ -62,6 +63,10 @@ interface LoginRequest {
 interface SetReadyState {
   type: "setReadyState"
   ready: boolean
+}
+
+interface RequestGameStart {
+  type: "requestGameStart"
 }
 
 interface PickQuest {

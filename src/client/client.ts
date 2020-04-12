@@ -6,6 +6,7 @@ const loginServerMessagesDiv = document.getElementById("login-server-messages")!
 const waitingRoomSection = document.getElementById("waiting-room-section")! as HTMLDivElement
 const waitingRoomUsersDiv = document.getElementById("waiting-room-users")! as HTMLDivElement
 const waitingRoomReadyButton = document.getElementById("waiting-room-ready")! as HTMLButtonElement
+const waitingRoomStartGameButton = document.getElementById("waiting-room-start-game")! as HTMLButtonElement
 
 const pickQuestSection = document.getElementById("pick-quest-section")! as HTMLDivElement
 const pickQuestResultsDiv = document.getElementById("pick-quest-results")! as HTMLDivElement
@@ -24,6 +25,7 @@ interface AppState {
   currentState: CurrentState
   username: string
   socket: WebSocket | null
+  isAdmin: boolean
   loginState?: {
     loginErrorMessage?: string
   }
@@ -49,7 +51,8 @@ interface AppState {
 const appState: AppState = {
   currentState: "login",
   username: "",
-  socket: null
+  socket: null,
+  isAdmin: false
 }
 
 
@@ -92,6 +95,21 @@ waitingRoomReadyButton.addEventListener("click", () => {
   send<SetReadyState>({
     type: "setReadyState", ready: !appState.waitingRoomState!.ready
   })
+})
+
+
+waitingRoomStartGameButton.addEventListener("click", () => {
+  if (appState.currentState !== "waitingRoom") {
+    console.warn("Wrong state for starting the game!")
+    return
+  }
+
+  if (appState.isAdmin === false) {
+    console.warn("You're not an admin!")
+    return
+  }
+
+  send<RequestGameStart>({ type: "requestGameStart" })
 })
 
 
@@ -160,8 +178,9 @@ function handleSocketMessages(event: MessageEvent): void {
     switch (message.type) {
       case "loginAccepted":
         console.info("Login accepted!")
-        appState.username = message.username
         appState.currentState = "waitingRoom"
+        appState.username = message.username
+        appState.isAdmin = message.admin
         send<SetReadyState>({ type: "setReadyState", ready: false })
         break
 
@@ -252,6 +271,9 @@ function render(): void {
 
     case "waitingRoom":
       waitingRoomSection.hidden = false
+      if (appState.isAdmin) {
+        waitingRoomStartGameButton.hidden = false
+      }
       if (appState.waitingRoomState) {
         const readyStates = appState.waitingRoomState.readyStates
         const readyStateHTML = Object.keys(readyStates)

@@ -32,6 +32,7 @@ interface State {
 interface Users {
   [username: string]: {
     socket: WebSocket
+    isAdmin: boolean
     isReady: boolean
     alignment?: "good" | "evil"
     role?: "Merlin" | "the assassin"
@@ -72,8 +73,8 @@ function handleNewConnection(socket: WebSocket): void {
           console.info(`Accepting login for ${message.username}.`)
           username = message.username
           state.usernames.push(username)
-          state.users[username] = { socket, isReady: false }
-          send<LoginAccepted>(socket, { type: "loginAccepted", username })
+          state.users[username] = { socket, isAdmin: state.usernames.length === 1, isReady: false }
+          send<LoginAccepted>(socket, { type: "loginAccepted", username, admin: state.users[username].isAdmin })
         } else {
           send<LoginRejected>(socket, { type: "loginRejected", reason: "Too many players." })
         }
@@ -108,13 +109,20 @@ function handleNewConnection(socket: WebSocket): void {
         state.users[username].isReady = message.ready
         sendToAll<ReadyStateChange>({
           type: "readyStateChange",
-          readyStates: state.usernames.reduce<{ [username: string]: boolean }>((allUsers, thisUsername) => {
-            return {
-              ...allUsers,
-              [thisUsername]: state.users[thisUsername].isReady
-            }
-          }, {})
+          readyStates: state.usernames.reduce<{ [username: string]: boolean }>((allUsers, thisUsername) => ({
+            ...allUsers,
+            [thisUsername]: state.users[thisUsername].isReady
+          }), {})
         })
+
+        break
+      }
+
+      case "requestGameStart": {
+        if (!state.users[username].isAdmin) {
+          send<BadRequest>(state.users[username].socket, { type: "badRequest", error: "Not admin." })
+          return
+        }
 
         const everyoneReady = Object.values(state.users).every(({ isReady }) => isReady)
         if (everyoneReady) {
@@ -124,6 +132,8 @@ function handleNewConnection(socket: WebSocket): void {
             state.state = "pickingQuest"
           }
         }
+
+        break
       }
     }
 
