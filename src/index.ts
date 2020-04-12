@@ -77,10 +77,20 @@ function handleReadyEvents(username: string): void {
         const everyoneReady = Object.values(users).every(({ isReady }) => isReady)
         if (everyoneReady) {
           console.info("Everyone's ready!")
+          if (Object.keys(users).length >= 5) {
+            sendToAll<StartGame>({ type: "startGame", players: Object.keys(users) })
+            users[username].socket.removeAllListeners()
+            handleSendQuestMessages(username)
+          }
         }
       }
     }
   })
+}
+
+
+function handleSendQuestMessages(username: string): void {
+
 }
 
 

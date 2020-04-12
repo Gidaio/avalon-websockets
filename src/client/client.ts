@@ -7,16 +7,22 @@ const readySection = document.getElementById("ready-section")! as HTMLDivElement
 const readyUsersDiv = document.getElementById("ready-users")! as HTMLDivElement
 const readyToggleButton = document.getElementById("ready-toggle") as HTMLButtonElement
 
+const sendQuestSection = document.getElementById("send-quest-section")! as HTMLDivElement
+const sendQuestPlayersDiv = document.getElementById("send-quest-players")! as HTMLDivElement
+const sendQuestButton = document.getElementById("send-quest-button")! as HTMLButtonElement
+
 
 interface State {
   username: string
   socket: WebSocket | null
   ready: boolean
+  players: string[]
 }
 const state: State = {
   username: "",
   socket: null,
-  ready: false
+  ready: false,
+  players: []
 }
 
 
@@ -26,6 +32,7 @@ handleLogin()
 function handleLogin(): void {
   loginSection.hidden = false
   readySection.hidden = true
+  sendQuestSection.hidden = true
 
   let loggingIn = false
 
@@ -83,6 +90,7 @@ function handleLogin(): void {
 function handleReadyRoom(): void {
   loginSection.hidden = true
   readySection.hidden = false
+  sendQuestSection.hidden = true
 
   readyToggleButton.addEventListener("click", toggleReadyState)
   state.socket!.addEventListener("message", handleReadyRoomMessages)
@@ -120,8 +128,38 @@ function handleReadyRoom(): void {
         readyUsersDiv.innerHTML = readyStateHTML
         break
       }
+
+      case "startGame": {
+        console.info("Game beginning!")
+        state.players = message.players
+        readyToggleButton.removeEventListener("click", toggleReadyState)
+        state.socket!.removeEventListener("message", handleReadyRoomMessages)
+        handleSendQuest()
+      }
     }
   }
+}
+
+
+function handleSendQuest(): void {
+  loginSection.hidden = true
+  readySection.hidden = true
+  sendQuestSection.hidden = false
+
+  const sendQuestHTML =
+    state.players.map(player => `<p><input type="checkbox" name="${player}">${player}</p>`)
+    .join("")
+
+  sendQuestPlayersDiv.innerHTML = sendQuestHTML
+
+  sendQuestButton.addEventListener("click", () => {
+    const selectedUsers = Array.from(sendQuestPlayersDiv.children).map(child => {
+      const input = child.firstElementChild! as HTMLInputElement
+      return { username: input.name, selected: input.checked }
+    }).filter(user => user.selected).map(user => user.username)
+
+    console.log(JSON.stringify(selectedUsers))
+  })
 }
 
 

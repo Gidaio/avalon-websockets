@@ -1,6 +1,6 @@
 // Server to client messages
 
-type ServerToClientMessage = UsernameRequest | LoginAccepted | ReadyStateChange
+type ServerToClientMessage = UsernameRequest | LoginAccepted | ReadyStateChange | StartGame
 
 interface UsernameRequest {
   type: "usernameRequest"
@@ -15,6 +15,11 @@ interface ReadyStateChange {
   readyStates: {
     [username: string]: boolean
   }
+}
+
+interface StartGame {
+  type: "startGame"
+  players: string[]
 }
 
 // Client to server messages
