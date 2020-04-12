@@ -19,9 +19,14 @@ wsServer.on("listening", () => {
 
 
 interface State {
-  state: "waiting" | "proposingQuest" | "resolvingQuest"
+  state: "waiting" | "pickingQuest" | "resolvingQuest"
   usernames: string[]
   users: Users
+  resolvingQuestState?: {
+    successes: number
+    failures: number
+    waitingOn: string[]
+  }
 }
 
 interface Users {
@@ -84,20 +89,20 @@ function handleNewConnection(socket: WebSocket): void {
 
     switch (state.state) {
       case "waiting":
-        handleWaitingRoomMessages(message)
+        handleWaitingRoomMessage(message)
         break
 
-      case "proposingQuest":
-        // handleQuestPropositionMessages(message)
+      case "pickingQuest":
+        handlePickingQuestMessage(message)
         break
 
       case "resolvingQuest":
-        // handleQuestResolutionMessages(message)
+        handleResolvingQuestMessage(message)
         break
     }
   })
 
-  function handleWaitingRoomMessages(message: ClientToServerMessage) {
+  function handleWaitingRoomMessage(message: ClientToServerMessage) {
     switch (message.type) {
       case "setReadyState": {
         state.users[username].isReady = message.ready
@@ -116,7 +121,7 @@ function handleNewConnection(socket: WebSocket): void {
           console.info("Everyone's ready!")
           if (state.usernames.length >= 5) {
             startGame()
-            state.state = "proposingQuest"
+            state.state = "pickingQuest"
           }
         }
       }
@@ -157,6 +162,59 @@ function handleNewConnection(socket: WebSocket): void {
 
         send<StartGame>(state.users[username].socket, startGameMessage)
       }
+    }
+  }
+
+  function handlePickingQuestMessage(message: ClientToServerMessage) {
+    switch (message.type) {
+      case "pickQuest":
+        state.state = "resolvingQuest"
+        state.resolvingQuestState = {
+          successes: 0,
+          failures: 0,
+          waitingOn: message.players
+        }
+
+        for (const waitingOnUsername of message.players) {
+          send<RequestQuestChoice>(state.users[waitingOnUsername].socket, { type: "requestQuestChoice" })
+        }
+
+        break
+    }
+  }
+
+  function handleResolvingQuestMessage(message: ClientToServerMessage) {
+    switch (message.type) {
+      case "questChoice":
+        if (!state.resolvingQuestState) {
+          console.warn("State is bad somehow!")
+          return
+        }
+
+        const usernameIndex = state.resolvingQuestState.waitingOn.findIndex(waitingOnUsername => waitingOnUsername === username)
+        if (usernameIndex === -1) {
+          console.warn(`We're not waiting on ${username}...?!`)
+          return
+        }
+
+        send<QuestChoiceReceived>(state.users[username].socket, { type: "questChoiceReceived" })
+
+        state.resolvingQuestState.waitingOn.splice(usernameIndex, 1)
+
+        message.choice === "failure" ? state.resolvingQuestState.failures++ : state.resolvingQuestState.successes++
+
+        if (state.resolvingQuestState.waitingOn.length === 0) {
+          sendToAll<QuestResults>({
+            type: "questResults",
+            successes: state.resolvingQuestState.successes,
+            failures: state.resolvingQuestState.failures
+          })
+
+          state.state = "pickingQuest"
+          delete state.resolvingQuestState
+        }
+
+        break
     }
   }
 }

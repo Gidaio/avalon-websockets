@@ -8,11 +8,14 @@ const waitingRoomUsersDiv = document.getElementById("waiting-room-users")! as HT
 const waitingRoomReadyButton = document.getElementById("waiting-room-ready")! as HTMLButtonElement
 
 const pickQuestSection = document.getElementById("pick-quest-section")! as HTMLDivElement
+const pickQuestResultsDiv = document.getElementById("pick-quest-results")! as HTMLDivElement
 const pickQuestPlayersDiv = document.getElementById("pick-quest-players")! as HTMLDivElement
 const pickQuestButton = document.getElementById("pick-quest-button")! as HTMLButtonElement
 const pickQuestKnowledgeDiv = document.getElementById("pick-quest-knowledge")! as HTMLDivElement
 
 const questChoiceSection = document.getElementById("quest-choice-section")! as HTMLDivElement
+const questChoiceSuccessButton = document.getElementById("quest-choice-success")! as HTMLButtonElement
+const questChoiceFailureButton = document.getElementById("quest-choice-failure")! as HTMLButtonElement
 
 
 type CurrentState = "login" | "waitingRoom" | "pickQuest" | "questChoice"
@@ -35,6 +38,10 @@ interface AppState {
     role: "good" | "evil" | "Merlin" | "the assassin"
     knowledge?: {
       [username: string]: string
+    }
+    previousResolution?: {
+      successes: number
+      failures: number
     }
   }
 }
@@ -70,7 +77,7 @@ loginButton.addEventListener("click", () => {
     console.info("Connected!")
     socket.addEventListener("message", handleSocketMessages)
     appState.socket = socket
-    send<LoginRequest>(appState.socket, { type: "loginRequest", username })
+    send<LoginRequest>({ type: "loginRequest", username })
   })
 })
 
@@ -82,10 +89,11 @@ waitingRoomReadyButton.addEventListener("click", () => {
   }
 
   console.info("Toggling ready state!")
-  send<SetReadyState>(appState.socket!, {
+  send<SetReadyState>({
     type: "setReadyState", ready: !appState.waitingRoomState!.ready
   })
 })
+
 
 pickQuestButton.addEventListener("click", () => {
   if (appState.currentState !== "pickQuest") {
@@ -93,12 +101,34 @@ pickQuestButton.addEventListener("click", () => {
     return
   }
 
-  const selectedUsers = Array.from(pickQuestPlayersDiv.children).map(child => {
+  const selectedPlayers = Array.from(pickQuestPlayersDiv.children).map(child => {
     const input = child.firstElementChild! as HTMLInputElement
     return { username: input.name, selected: input.checked }
   }).filter(user => user.selected).map(user => user.username)
 
-  console.log(JSON.stringify(selectedUsers))
+  console.log(JSON.stringify(selectedPlayers))
+
+  send<PickQuest>({ type: "pickQuest", players: selectedPlayers })
+})
+
+
+questChoiceSuccessButton.addEventListener("click", () => {
+  if (appState.currentState !== "questChoice") {
+    console.warn("Wrong state for succeeding a quest!")
+    return
+  }
+
+  send<QuestChoice>({ type: "questChoice", choice: "success" })
+})
+
+
+questChoiceFailureButton.addEventListener("click", () => {
+  if (appState.currentState !== "questChoice") {
+    console.warn("Wrong state for failing a quest!")
+    return
+  }
+
+  send<QuestChoice>({ type: "questChoice", choice: "failure" })
 })
 
 
@@ -117,6 +147,10 @@ function handleSocketMessages(event: MessageEvent): void {
     case "pickQuest":
       handlePickQuestMessage(message)
       break
+
+    case "questChoice":
+      handleQuestChoiceMessage(message)
+      break
   }
 
   render()
@@ -128,7 +162,7 @@ function handleSocketMessages(event: MessageEvent): void {
         console.info("Login accepted!")
         appState.username = message.username
         appState.currentState = "waitingRoom"
-        send<SetReadyState>(appState.socket!, { type: "setReadyState", ready: false })
+        send<SetReadyState>({ type: "setReadyState", ready: false })
         break
 
       case "loginRejected":
@@ -163,7 +197,41 @@ function handleSocketMessages(event: MessageEvent): void {
   }
 
   function handlePickQuestMessage(message: ServerToClientMessage): void {
-    console.info("Pick quest message!", message)
+    switch (message.type) {
+      case "requestQuestChoice":
+        appState.currentState = "questChoice"
+        break
+
+      case "questResults":
+        appState.currentState = "pickQuest"
+        appState.pickQuestState = {
+          ...appState.pickQuestState!,
+          previousResolution: {
+            successes: message.successes,
+            failures: message.failures
+          }
+        }
+        break
+    }
+  }
+
+  function handleQuestChoiceMessage(message: ServerToClientMessage): void {
+    switch (message.type) {
+      case "questChoiceReceived":
+        appState.currentState = "pickQuest"
+        break
+
+      case "questResults":
+        appState.currentState = "pickQuest"
+        appState.pickQuestState = {
+          ...appState.pickQuestState!,
+          previousResolution: {
+            successes: message.successes,
+            failures: message.failures
+          }
+        }
+        break
+    }
   }
 }
 
@@ -209,17 +277,36 @@ function render(): void {
         let pickQuestKnowledge = `<p>You are ${appState.pickQuestState.role}.</p>`
         if (appState.pickQuestState.knowledge) {
           for (const username in appState.pickQuestState.knowledge) {
-            pickQuestKnowledge += `<p>${username} is ${appState.pickQuestState.knowledge}</p>`
+            pickQuestKnowledge += `<p>${username} is ${appState.pickQuestState.knowledge[username]}</p>`
           }
         }
 
         pickQuestKnowledgeDiv.innerHTML = pickQuestKnowledge
+
+        let pickQuestResults = ""
+        if (appState.pickQuestState.previousResolution) {
+          const { successes, failures } = appState.pickQuestState.previousResolution
+          pickQuestResults += `<p>Successes: ${successes}<br />Failures: ${failures}</p>`
+        }
+        pickQuestResultsDiv.innerHTML = pickQuestResults
       }
+      break
+
+    case "questChoice":
+      questChoiceSection.hidden = false
       break
   }
 }
 
 
-function send<T extends ClientToServerMessage>(socket: WebSocket, message: T): void {
-  socket.send(JSON.stringify(message))
+function send<T extends ClientToServerMessage>(message: T): void {
+  if (!appState.socket) {
+    throw new Error("No socket!")
+  }
+
+  if (appState.socket.readyState !== WebSocket.OPEN) {
+    throw new Error(`Socket isn't open! State: ${appState.socket.readyState}`)
+  }
+
+  appState.socket.send(JSON.stringify(message))
 }

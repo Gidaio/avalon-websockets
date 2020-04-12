@@ -1,6 +1,9 @@
 // Server to client messages
 
-type ServerToClientMessage = LoginAccepted | LoginRejected | BadRequest | ReadyStateChange | StartGame
+type ServerToClientMessage =
+  LoginAccepted | LoginRejected | BadRequest |
+  ReadyStateChange | StartGame |
+  RequestQuestChoice | QuestChoiceReceived | QuestResults
 
 interface LoginAccepted {
   type: "loginAccepted"
@@ -37,6 +40,10 @@ interface RequestQuestChoice {
   type: "requestQuestChoice"
 }
 
+interface QuestChoiceReceived {
+  type: "questChoiceReceived"
+}
+
 interface QuestResults {
   type: "questResults"
   successes: number
@@ -45,7 +52,7 @@ interface QuestResults {
 
 // Client to server messages
 
-type ClientToServerMessage = LoginRequest | SetReadyState
+type ClientToServerMessage = LoginRequest | SetReadyState | PickQuest | QuestChoice
 
 interface LoginRequest {
   type: "loginRequest"
@@ -57,12 +64,12 @@ interface SetReadyState {
   ready: boolean
 }
 
-interface SendQuest {
-  type: "sendQuest"
+interface PickQuest {
+  type: "pickQuest"
   players: string[]
 }
 
-interface SendQuestChoice {
-  type: "sendQuestChoice"
+interface QuestChoice {
+  type: "questChoice"
   choice: "success" | "failure"
 }
