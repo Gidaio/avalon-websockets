@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "start": "node out/index.js"
+  },
   "dependencies": {
     "express": "^4.17.1",
     "ws": "^7.2.3"
