@@ -3,174 +3,220 @@ const loginUsernameInput = document.getElementById("login-username")! as HTMLInp
 const loginButton = document.getElementById("login-button")! as HTMLButtonElement
 const loginServerMessagesDiv = document.getElementById("login-server-messages")! as HTMLDivElement
 
-const readySection = document.getElementById("ready-section")! as HTMLDivElement
-const readyUsersDiv = document.getElementById("ready-users")! as HTMLDivElement
-const readyToggleButton = document.getElementById("ready-toggle") as HTMLButtonElement
+const waitingRoomSection = document.getElementById("waiting-room-section")! as HTMLDivElement
+const waitingRoomUsersDiv = document.getElementById("waiting-room-users")! as HTMLDivElement
+const waitingRoomReadyButton = document.getElementById("waiting-room-ready")! as HTMLButtonElement
 
-const sendQuestSection = document.getElementById("send-quest-section")! as HTMLDivElement
-const sendQuestPlayersDiv = document.getElementById("send-quest-players")! as HTMLDivElement
-const sendQuestButton = document.getElementById("send-quest-button")! as HTMLButtonElement
-const sendQuestKnowledgeDiv = document.getElementById("send-quest-knowledge")! as HTMLDivElement
+const pickQuestSection = document.getElementById("pick-quest-section")! as HTMLDivElement
+const pickQuestPlayersDiv = document.getElementById("pick-quest-players")! as HTMLDivElement
+const pickQuestButton = document.getElementById("pick-quest-button")! as HTMLButtonElement
+const pickQuestKnowledgeDiv = document.getElementById("pick-quest-knowledge")! as HTMLDivElement
+
+const questChoiceSection = document.getElementById("quest-choice-section")! as HTMLDivElement
 
 
-interface State {
+type CurrentState = "login" | "waitingRoom" | "pickQuest" | "questChoice"
+
+interface AppState {
+  currentState: CurrentState
   username: string
   socket: WebSocket | null
-  ready: boolean
-  players: string[]
-  role?: "good" | "evil" | "Merlin" | "the assassin"
-  knowledge?: {
-    [username: string]: string
+  loginState?: {
+    loginErrorMessage?: string
+  }
+  waitingRoomState?: {
+    ready: boolean
+    readyStates: {
+      [username: string]: boolean
+    }
+  }
+  pickQuestState?: {
+    players: string[]
+    role: "good" | "evil" | "Merlin" | "the assassin"
+    knowledge?: {
+      [username: string]: string
+    }
   }
 }
-const state: State = {
+
+const appState: AppState = {
+  currentState: "login",
   username: "",
-  socket: null,
-  ready: false,
-  players: []
+  socket: null
 }
 
 
-handleLogin()
+render()
 
 
-function handleLogin(): void {
-  loginSection.hidden = false
-  readySection.hidden = true
-  sendQuestSection.hidden = true
-
-  let loggingIn = false
-
-  loginButton.addEventListener("click", handleLoginButtonClick)
-
-  function handleLoginButtonClick(): void {
-    if (loggingIn) { return }
-    loggingIn = true
-
-    const username = loginUsernameInput.value
-
-    const socket = new WebSocket(`ws://${location.host}`)
-
-    socket.addEventListener("error", () => {
-      console.error("Couldn't connect via WebSocket!")
-      loggingIn = false
-    })
-
-    socket.addEventListener("close", () => {
-      console.warn("Server closed the WebSocket!")
-      loggingIn = false
-    })
-
-    socket.addEventListener("open", () => {
-      console.info("Connected!")
-      send<LoginRequest>(socket, { type: "loginRequest", username })
-    })
-
-    socket.addEventListener("message", handleLoginMessages)
-
-    function handleLoginMessages(event: MessageEvent): void {
-      const message: ServerToClientMessage = JSON.parse(event.data)
-
-      switch (message.type) {
-        case "loginAccepted": {
-          console.info("Login accepted!")
-          loginButton.removeEventListener("click", handleLoginButtonClick)
-          socket.removeEventListener("message", handleLoginMessages)
-          state.username = username
-          state.socket = socket
-          handleReadyRoom()
-          break
-        }
-      }
-    }
+loginButton.addEventListener("click", () => {
+  if (appState.currentState !== "login") {
+    console.warn("Wrong state for login button!")
+    return
   }
-}
 
+  const username = loginUsernameInput.value
+  const socket = new WebSocket(`ws://${location.host}`)
 
-function handleReadyRoom(): void {
-  loginSection.hidden = true
-  readySection.hidden = false
-  sendQuestSection.hidden = true
-
-  readyToggleButton.addEventListener("click", toggleReadyState)
-  state.socket!.addEventListener("message", handleReadyRoomMessages)
-  console.info("Sending initial ready state...")
-  send<SetReadyState>(state.socket!, {
-    type: "setReadyState",
-    ready: state.ready
+  socket.addEventListener("error", () => {
+    console.error("Couldn't connect!")
   })
 
-  function toggleReadyState() {
-    console.info("Toggling ready state...")
-    send<SetReadyState>(state.socket!, {
-      type: "setReadyState",
-      ready: !state.ready
-    })
+  socket.addEventListener("close", () => {
+    console.warn("Server closed the socket!")
+  })
+
+  socket.addEventListener("open", () => {
+    console.info("Connected!")
+    socket.addEventListener("message", handleSocketMessages)
+    appState.socket = socket
+    send<LoginRequest>(appState.socket, { type: "loginRequest", username })
+  })
+})
+
+
+waitingRoomReadyButton.addEventListener("click", () => {
+  if (appState.currentState !== "waitingRoom") {
+    console.warn("Wrong state for ready button!")
+    return
   }
 
-  function handleReadyRoomMessages(event: MessageEvent): void {
-    const message: ServerToClientMessage = JSON.parse(event.data)
+  console.info("Toggling ready state!")
+  send<SetReadyState>(appState.socket!, {
+    type: "setReadyState", ready: !appState.waitingRoomState!.ready
+  })
+})
 
+pickQuestButton.addEventListener("click", () => {
+  if (appState.currentState !== "pickQuest") {
+    console.warn("Wrong state for pick quest button!")
+    return
+  }
+
+  const selectedUsers = Array.from(pickQuestPlayersDiv.children).map(child => {
+    const input = child.firstElementChild! as HTMLInputElement
+    return { username: input.name, selected: input.checked }
+  }).filter(user => user.selected).map(user => user.username)
+
+  console.log(JSON.stringify(selectedUsers))
+})
+
+
+function handleSocketMessages(event: MessageEvent): void {
+  const message: ServerToClientMessage = JSON.parse(event.data)
+
+  switch (appState.currentState) {
+    case "login":
+      handleLoginMessage(message)
+      break
+
+    case "waitingRoom":
+      handleWaitingRoomMessage(message)
+      break
+
+    case "pickQuest":
+      handlePickQuestMessage(message)
+      break
+  }
+
+  render()
+
+
+  function handleLoginMessage(message: ServerToClientMessage): void {
     switch (message.type) {
-      case "readyStateChange": {
-        console.info("Got a ready state change!")
-
-        const readyStateHTML = Object.keys(message.readyStates).reduce<string>((html, username) => {
-          if (username === state.username) {
-            return html
-          } else {
-            return html + `<p>${username}: ${message.readyStates[username]}</p>`
-          }
-        }, "")
-
-        state.ready = message.readyStates[state.username]
-        readyToggleButton.innerHTML = state.ready ? "Not Ready" : "Ready"
-        readyUsersDiv.innerHTML = readyStateHTML
+      case "loginAccepted":
+        console.info("Login accepted!")
+        appState.username = message.username
+        appState.currentState = "waitingRoom"
+        send<SetReadyState>(appState.socket!, { type: "setReadyState", ready: false })
         break
-      }
 
-      case "startGame": {
-        console.info("Game beginning!")
-        state.players = message.players
-        state.role = message.role
-        state.knowledge = message.knowledge
-        readyToggleButton.removeEventListener("click", toggleReadyState)
-        state.socket!.removeEventListener("message", handleReadyRoomMessages)
-        handleSendQuest()
-      }
+      case "loginRejected":
+        console.warn("Login rejected!")
+        appState.loginState = {
+          loginErrorMessage: message.reason
+        }
+        break
     }
+  }
+
+  function handleWaitingRoomMessage(message: ServerToClientMessage): void {
+    switch (message.type) {
+      case "readyStateChange":
+        console.info("Got a ready state change!")
+        appState.waitingRoomState = {
+          ready: message.readyStates[appState.username],
+          readyStates: message.readyStates
+        }
+        break
+
+      case "startGame":
+        console.info("Game beginning!")
+        appState.pickQuestState = {
+          players: message.players,
+          role: message.role,
+          knowledge: message.knowledge
+        }
+        appState.currentState = "pickQuest"
+        break
+    }
+  }
+
+  function handlePickQuestMessage(message: ServerToClientMessage): void {
+    console.info("Pick quest message!", message)
   }
 }
 
 
-function handleSendQuest(): void {
+function render(): void {
   loginSection.hidden = true
-  readySection.hidden = true
-  sendQuestSection.hidden = false
+  waitingRoomSection.hidden = true
+  pickQuestSection.hidden = true
+  questChoiceSection.hidden = true
 
-  const sendQuestHTML =
-    state.players.map(player => `<p><input type="checkbox" name="${player}">${player}</p>`)
-    .join("")
+  switch (appState.currentState) {
+    case "login":
+      loginSection.hidden = false
+      if (appState.loginState?.loginErrorMessage) {
+        loginServerMessagesDiv.innerHTML = `<p>${appState.loginState.loginErrorMessage}</p>`
+      }
+      break
 
-  sendQuestPlayersDiv.innerHTML = sendQuestHTML
+    case "waitingRoom":
+      waitingRoomSection.hidden = false
+      if (appState.waitingRoomState) {
+        const readyStates = appState.waitingRoomState.readyStates
+        const readyStateHTML = Object.keys(readyStates)
+          .reduce<string>(
+            (html, username) => html + `<p>${username}: ${readyStates[username] ? "Ready" : "Not Ready"}</p>`,
+            ""
+          )
 
-  let sendQuestKnowledge = `<p>You are ${state.role}.</p>`
-  if (state.knowledge) {
-    for (const username in state.knowledge) {
-      sendQuestKnowledge += `<p>${username} is ${state.knowledge[username]}.</p>`
-    }
+        waitingRoomUsersDiv.innerHTML = readyStateHTML
+        waitingRoomReadyButton.innerHTML = readyStates[appState.username] ? "I'm Not Ready!" : "I'm Ready!"
+      }
+      break
+
+    case "pickQuest":
+      pickQuestSection.hidden = false
+      if (appState.pickQuestState) {
+        const pickQuestHTML = appState.pickQuestState.players
+          .map(username => `<p><input type="checkbox" name="${username}">${username}</p>`)
+          .join("")
+
+        pickQuestPlayersDiv.innerHTML = pickQuestHTML
+
+        let pickQuestKnowledge = `<p>You are ${appState.pickQuestState.role}.</p>`
+        if (appState.pickQuestState.knowledge) {
+          for (const username in appState.pickQuestState.knowledge) {
+            pickQuestKnowledge += `<p>${username} is ${appState.pickQuestState.knowledge}</p>`
+          }
+        }
+
+        pickQuestKnowledgeDiv.innerHTML = pickQuestKnowledge
+      }
+      break
   }
-
-  sendQuestKnowledgeDiv.innerHTML = sendQuestKnowledge
-
-  sendQuestButton.addEventListener("click", () => {
-    const selectedUsers = Array.from(sendQuestPlayersDiv.children).map(child => {
-      const input = child.firstElementChild! as HTMLInputElement
-      return { username: input.name, selected: input.checked }
-    }).filter(user => user.selected).map(user => user.username)
-
-    console.log(JSON.stringify(selectedUsers))
-  })
 }
 
 

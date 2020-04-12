@@ -68,7 +68,7 @@ function handleNewConnection(socket: WebSocket): void {
           username = message.username
           state.usernames.push(username)
           state.users[username] = { socket, isReady: false }
-          send<LoginAccepted>(socket, { type: "loginAccepted" })
+          send<LoginAccepted>(socket, { type: "loginAccepted", username })
         } else {
           send<LoginRejected>(socket, { type: "loginRejected", reason: "Too many players." })
         }

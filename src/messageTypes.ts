@@ -4,6 +4,7 @@ type ServerToClientMessage = LoginAccepted | LoginRejected | BadRequest | ReadyS
 
 interface LoginAccepted {
   type: "loginAccepted"
+  username: string
 }
 
 interface LoginRejected {
