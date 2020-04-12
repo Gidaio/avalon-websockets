@@ -18,6 +18,11 @@ wsServer.on("listening", () => {
 })
 
 
+interface State {
+  state: "waiting" | "proposingQuest" | "resolvingQuest"
+  users: Users
+}
+
 interface Users {
   [username: string]: {
     socket: WebSocket
@@ -25,7 +30,10 @@ interface Users {
   }
 }
 
-const users: Users = {}
+const state: State = {
+  state: "waiting",
+  users: {}
+}
 
 
 wsServer.on("connection", socket => {
@@ -35,67 +43,71 @@ wsServer.on("connection", socket => {
 
 function handleNewConnection(socket: WebSocket): void {
   console.info("New connection")
-  send<UsernameRequest>(socket, { type: "usernameRequest" })
+  let username = ""
 
   socket.on("message", data => {
     const message: ClientToServerMessage = JSON.parse(data.toString())
 
-    switch (message.type) {
-      case "usernameResponse": {
-        console.info(`Accepting login for ${message.username}`)
+    if (message.type === "loginRequest") {
+      if (state.state === "waiting") {
+        console.info(`Accepting login for ${message.username}.`)
+        username = message.username
+        state.users[username] = { socket, isReady: false }
         send<LoginAccepted>(socket, { type: "loginAccepted" })
-        socket.removeAllListeners()
-        users[message.username] = {
-          socket,
-          isReady: false
-        }
-        handleReadyEvents(message.username)
-        break
+      } else {
+        send<LoginRejected>(socket, { type: "loginRejected", reason: "Game has already begun." })
       }
+
+      return
+    } else if (username === "") {
+      send<BadRequest>(socket, { type: "badRequest", error: "Not logged in!" })
+    }
+
+    switch (state.state) {
+      case "waiting":
+        handleWaitingRoomMessages(message)
+        break
+
+      case "proposingQuest":
+        // handleQuestPropositionMessages(message)
+        break
+
+      case "resolvingQuest":
+        // handleQuestResolutionMessages(message)
+        break
     }
   })
-}
 
-
-function handleReadyEvents(username: string): void {
-  users[username].socket.on("message", data => {
-    const message: ClientToServerMessage = JSON.parse(data.toString())
-
+  function handleWaitingRoomMessages(message: ClientToServerMessage) {
     switch (message.type) {
       case "setReadyState": {
-        users[username].isReady = message.ready
+        state.users[username].isReady = message.ready
         sendToAll<ReadyStateChange>({
           type: "readyStateChange",
-          readyStates: Object.keys(users).reduce<{ [username: string]: boolean }>((allUsers, username) => {
+          readyStates: Object.keys(state.users).reduce<{ [username: string]: boolean }>((allUsers, thisUsername) => {
             return {
               ...allUsers,
-              [username]: users[username].isReady
+              [thisUsername]: state.users[thisUsername].isReady
             }
           }, {})
         })
 
-        const everyoneReady = Object.values(users).every(({ isReady }) => isReady)
+        const everyoneReady = Object.values(state.users).every(({ isReady }) => isReady)
         if (everyoneReady) {
           console.info("Everyone's ready!")
-          if (Object.keys(users).length >= 5) {
-            sendToAll<StartGame>({ type: "startGame", players: Object.keys(users) })
-            users[username].socket.removeAllListeners()
-            handleSendQuestMessages(username)
+          if (Object.keys(state.users).length >= 5) {
+            sendToAll<StartGame>({ type: "startGame", players: Object.keys(state.users) })
+            state.state = "proposingQuest"
           }
         }
       }
     }
-  })
-}
-
-
-function handleSendQuestMessages(username: string): void {
-
+  }
 }
 
 
 function sendToAll<T extends ServerToClientMessage>(message: T): void {
-  Object.values(users).forEach(({ socket }) => {
+  Object.values(state.users).forEach(({ socket }) => {
     send<T>(socket, message)
   })
 }

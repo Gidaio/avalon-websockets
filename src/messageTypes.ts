@@ -1,13 +1,19 @@
 // Server to client messages
 
-type ServerToClientMessage = UsernameRequest | LoginAccepted | ReadyStateChange | StartGame
-
-interface UsernameRequest {
-  type: "usernameRequest"
-}
+type ServerToClientMessage = LoginAccepted | LoginRejected | BadRequest | ReadyStateChange | StartGame
 
 interface LoginAccepted {
   type: "loginAccepted"
+}
+
+interface LoginRejected {
+  type: "loginRejected"
+  reason: string
+}
+
+interface BadRequest {
+  type: "badRequest"
+  error: string
 }
 
 interface ReadyStateChange {
@@ -24,10 +30,10 @@ interface StartGame {
 
 // Client to server messages
 
-type ClientToServerMessage = UsernameResponse | SetReadyState
+type ClientToServerMessage = LoginRequest | SetReadyState
 
-interface UsernameResponse {
-  type: "usernameResponse"
+interface LoginRequest {
+  type: "loginRequest"
   username: string
 }
 

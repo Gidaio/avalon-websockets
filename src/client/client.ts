@@ -58,6 +58,7 @@ function handleLogin(): void {
 
     socket.addEventListener("open", () => {
       console.info("Connected!")
+      send<LoginRequest>(socket, { type: "loginRequest", username })
     })
 
     socket.addEventListener("message", handleLoginMessages)
@@ -66,12 +67,6 @@ function handleLogin(): void {
       const message: ServerToClientMessage = JSON.parse(event.data)
 
       switch (message.type) {
-        case "usernameRequest": {
-          console.info(`Server requesting username, sending ${username}...`)
-          send<UsernameResponse>(socket, { type: "usernameResponse", username })
-          break
-        }
-
         case "loginAccepted": {
           console.info("Login accepted!")
           loginButton.removeEventListener("click", handleLoginButtonClick)
