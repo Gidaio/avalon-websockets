@@ -20,6 +20,7 @@ wsServer.on("listening", () => {
 
 interface State {
   state: "waiting" | "proposingQuest" | "resolvingQuest"
+  usernames: string[]
   users: Users
 }
 
@@ -27,11 +28,23 @@ interface Users {
   [username: string]: {
     socket: WebSocket
     isReady: boolean
+    alignment?: "good" | "evil"
+    role?: "Merlin" | "the assassin"
   }
+}
+
+const PLAYER_DISTRIBUTIONS: { [playerCount: number]: [number, number] } = {
+  5: [3, 2],
+  6: [4, 2],
+  7: [4, 3],
+  8: [5, 3],
+  9: [6, 3],
+  10: [6, 4]
 }
 
 const state: State = {
   state: "waiting",
+  usernames: [],
   users: {}
 }
 
@@ -50,10 +63,15 @@ function handleNewConnection(socket: WebSocket): void {
 
     if (message.type === "loginRequest") {
       if (state.state === "waiting") {
-        console.info(`Accepting login for ${message.username}.`)
-        username = message.username
-        state.users[username] = { socket, isReady: false }
-        send<LoginAccepted>(socket, { type: "loginAccepted" })
+        if (state.usernames.length < 10) {
+          console.info(`Accepting login for ${message.username}.`)
+          username = message.username
+          state.usernames.push(username)
+          state.users[username] = { socket, isReady: false }
+          send<LoginAccepted>(socket, { type: "loginAccepted" })
+        } else {
+          send<LoginRejected>(socket, { type: "loginRejected", reason: "Too many players." })
+        }
       } else {
         send<LoginRejected>(socket, { type: "loginRejected", reason: "Game has already begun." })
       }
@@ -61,6 +79,7 @@ function handleNewConnection(socket: WebSocket): void {
       return
     } else if (username === "") {
       send<BadRequest>(socket, { type: "badRequest", error: "Not logged in!" })
+      return
     }
 
     switch (state.state) {
@@ -84,7 +103,7 @@ function handleNewConnection(socket: WebSocket): void {
         state.users[username].isReady = message.ready
         sendToAll<ReadyStateChange>({
           type: "readyStateChange",
-          readyStates: Object.keys(state.users).reduce<{ [username: string]: boolean }>((allUsers, thisUsername) => {
+          readyStates: state.usernames.reduce<{ [username: string]: boolean }>((allUsers, thisUsername) => {
             return {
               ...allUsers,
               [thisUsername]: state.users[thisUsername].isReady
@@ -95,11 +114,48 @@ function handleNewConnection(socket: WebSocket): void {
         const everyoneReady = Object.values(state.users).every(({ isReady }) => isReady)
         if (everyoneReady) {
           console.info("Everyone's ready!")
-          if (Object.keys(state.users).length >= 5) {
-            sendToAll<StartGame>({ type: "startGame", players: Object.keys(state.users) })
+          if (state.usernames.length >= 5) {
+            startGame()
             state.state = "proposingQuest"
           }
         }
+      }
+    }
+
+    function startGame() {
+      const distribution = PLAYER_DISTRIBUTIONS[state.usernames.length]
+      const alignments: Array<"good" | "evil"> = [...Array(distribution[0]).fill("good"), ...Array(distribution[1]).fill("evil")]
+
+      for (const username in state.users) {
+        const index = Math.floor(Math.random() * alignments.length)
+        const alignment = alignments.splice(index, 1)[0]
+        state.users[username].alignment = alignment
+      }
+
+      const goodPlayers = state.usernames.filter(username => state.users[username].alignment === "good")
+      state.users[goodPlayers[Math.floor(Math.random() * goodPlayers.length)]].role = "Merlin"
+
+      const evilPlayers = state.usernames.filter(username => state.users[username].alignment === "evil")
+      state.users[evilPlayers[Math.floor(Math.random() * evilPlayers.length)]].role = "the assassin"
+
+      for (const username in state.users) {
+        const user = state.users[username]
+        let knowledge
+        if (user.role) {
+          if (user.role === "Merlin") {
+            knowledge = state.usernames.filter(username => state.users[username].alignment === "evil")
+              .reduce<{ [username: string]: "evil" }>((players, username) => ({ ...players, [username]: "evil" }), {})
+          }
+        }
+
+        const startGameMessage: StartGame = {
+          type: "startGame",
+          players: state.usernames,
+          role: user.role! || user.alignment!,
+          knowledge
+        }
+
+        send<StartGame>(state.users[username].socket, startGameMessage)
       }
     }
   }

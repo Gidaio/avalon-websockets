@@ -10,6 +10,7 @@ const readyToggleButton = document.getElementById("ready-toggle") as HTMLButtonE
 const sendQuestSection = document.getElementById("send-quest-section")! as HTMLDivElement
 const sendQuestPlayersDiv = document.getElementById("send-quest-players")! as HTMLDivElement
 const sendQuestButton = document.getElementById("send-quest-button")! as HTMLButtonElement
+const sendQuestKnowledgeDiv = document.getElementById("send-quest-knowledge")! as HTMLDivElement
 
 
 interface State {
@@ -17,6 +18,10 @@ interface State {
   socket: WebSocket | null
   ready: boolean
   players: string[]
+  role?: "good" | "evil" | "Merlin" | "the assassin"
+  knowledge?: {
+    [username: string]: string
+  }
 }
 const state: State = {
   username: "",
@@ -127,6 +132,8 @@ function handleReadyRoom(): void {
       case "startGame": {
         console.info("Game beginning!")
         state.players = message.players
+        state.role = message.role
+        state.knowledge = message.knowledge
         readyToggleButton.removeEventListener("click", toggleReadyState)
         state.socket!.removeEventListener("message", handleReadyRoomMessages)
         handleSendQuest()
@@ -146,6 +153,15 @@ function handleSendQuest(): void {
     .join("")
 
   sendQuestPlayersDiv.innerHTML = sendQuestHTML
+
+  let sendQuestKnowledge = `<p>You are ${state.role}.</p>`
+  if (state.knowledge) {
+    for (const username in state.knowledge) {
+      sendQuestKnowledge += `<p>${username} is ${state.knowledge[username]}.</p>`
+    }
+  }
+
+  sendQuestKnowledgeDiv.innerHTML = sendQuestKnowledge
 
   sendQuestButton.addEventListener("click", () => {
     const selectedUsers = Array.from(sendQuestPlayersDiv.children).map(child => {
