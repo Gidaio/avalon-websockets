@@ -22,6 +22,13 @@ interface State {
   state: "waiting" | "pickingQuest" | "resolvingQuest"
   usernames: string[]
   users: Users
+  optionalRoles: {
+    percival: boolean
+    mordred: boolean
+    morgana: boolean
+    oberon: boolean
+    helmetLovers: boolean
+  }
   resolvingQuestState?: {
     successes: number
     failures: number
@@ -35,7 +42,10 @@ interface Users {
     isAdmin: boolean
     isReady: boolean
     alignment?: "good" | "evil"
-    role?: "Merlin" | "the assassin"
+    role?: "Merlin" | "Percival" | "the assassin" | "Mordred" | "Morgana" | "Oberon" | "a helmet lover"
+    knowledge?: {
+      [username: string]: string
+    }
   }
 }
 
@@ -51,7 +61,14 @@ const PLAYER_DISTRIBUTIONS: { [playerCount: number]: [number, number] } = {
 const state: State = {
   state: "waiting",
   usernames: [],
-  users: {}
+  users: {},
+  optionalRoles: {
+    percival: false,
+    mordred: false,
+    morgana: false,
+    oberon: false,
+    helmetLovers: false
+  }
 }
 
 
@@ -69,15 +86,30 @@ function handleNewConnection(socket: WebSocket): void {
 
     if (message.type === "loginRequest") {
       if (state.state === "waiting") {
-        if (state.usernames.length < 10) {
-          console.info(`Accepting login for ${message.username}.`)
-          username = message.username
-          state.usernames.push(username)
-          state.users[username] = { socket, isAdmin: state.usernames.length === 1, isReady: false }
-          send<LoginAccepted>(socket, { type: "loginAccepted", username, admin: state.users[username].isAdmin })
+        if (!state.usernames.includes(message.username)) {
+          if (state.usernames.length < 10) {
+            console.info(`Accepting login for ${message.username}.`)
+            username = message.username
+            state.usernames.push(username)
+            state.users[username] = { socket, isAdmin: state.usernames.length === 1, isReady: false }
+            send<LoginAccepted>(socket, { type: "loginAccepted", username, admin: state.users[username].isAdmin })
+          } else {
+            send<LoginRejected>(socket, { type: "loginRejected", reason: "Too many players." })
+          }
         } else {
-          send<LoginRejected>(socket, { type: "loginRejected", reason: "Too many players." })
+          send<LoginRejected>(socket, { type: "loginRejected", reason: "Username taken." })
         }
+      } else if (state.state === "pickingQuest" && state.usernames.includes(message.username)) {
+        console.info(`Reconnecting ${message.username}...`)
+        username = message.username
+        const user = state.users[username]
+        send<LoginAccepted>(socket, { type: "loginAccepted", username, admin: state.users[username].isAdmin })
+        send<StartGame>(socket, {
+          type: "startGame",
+          players: state.usernames,
+          role: user.role || user.alignment!,
+          knowledge: user.knowledge
+        })
       } else {
         send<LoginRejected>(socket, { type: "loginRejected", reason: "Game has already begun." })
       }
@@ -85,6 +117,24 @@ function handleNewConnection(socket: WebSocket): void {
       return
     } else if (username === "") {
       send<BadRequest>(socket, { type: "badRequest", error: "Not logged in!" })
+      return
+    }
+
+    if (message.type === "requestGameEnd") {
+      if (!state.users[username].isAdmin) {
+        send<BadRequest>(socket, { type: "badRequest", error: "Admin only message." })
+        return
+      }
+
+      state.state = "waiting"
+      state.usernames = []
+      state.users = {}
+
+      wsServer.clients.forEach(socket => {
+        socket.removeAllListeners()
+        socket.close()
+      })
+
       return
     }
 
@@ -127,6 +177,13 @@ function handleNewConnection(socket: WebSocket): void {
         const everyoneReady = Object.values(state.users).every(({ isReady }) => isReady)
         if (everyoneReady) {
           console.info("Everyone's ready!")
+
+          state.optionalRoles.percival = message.percival
+          state.optionalRoles.mordred = message.mordred
+          state.optionalRoles.morgana = message.morgana
+          state.optionalRoles.oberon = message.oberon
+          state.optionalRoles.helmetLovers = message.helmetLovers
+
           if (state.usernames.length >= 5) {
             startGame()
             state.state = "pickingQuest"
@@ -148,19 +205,79 @@ function handleNewConnection(socket: WebSocket): void {
       }
 
       const goodPlayers = state.usernames.filter(username => state.users[username].alignment === "good")
-      state.users[goodPlayers[Math.floor(Math.random() * goodPlayers.length)]].role = "Merlin"
+      const merlinIndex = Math.floor(Math.random() * goodPlayers.length)
+      const merlinUsername = goodPlayers.splice(merlinIndex, 1)[0]
+      state.users[merlinUsername].role = "Merlin"
+
+      if (state.optionalRoles.percival) {
+        const percivalIndex = Math.floor(Math.random() * goodPlayers.length)
+        const percivalUsername = goodPlayers.splice(percivalIndex, 1)[0]
+        state.users[percivalUsername].role = "Percival"
+      }
 
       const evilPlayers = state.usernames.filter(username => state.users[username].alignment === "evil")
-      state.users[evilPlayers[Math.floor(Math.random() * evilPlayers.length)]].role = "the assassin"
+      const assassinIndex = Math.floor(Math.random() * evilPlayers.length)
+      const assassinUsername = evilPlayers.splice(assassinIndex, 1)[0]
+      state.users[assassinUsername].role = "the assassin"
+
+      if (state.optionalRoles.mordred) {
+        const mordredIndex = Math.floor(Math.random() * evilPlayers.length)
+        const mordredUsername = evilPlayers.splice(mordredIndex, 1)[0]
+        state.users[mordredUsername].role = "Mordred"
+      }
+
+      if (state.optionalRoles.morgana) {
+        const morganaIndex = Math.floor(Math.random() * evilPlayers.length)
+        const morganaUsername = evilPlayers.splice(morganaIndex, 1)[0]
+        state.users[morganaUsername].role = "Morgana"
+      }
+
+      if (state.optionalRoles.oberon) {
+        const oberonIndex = Math.floor(Math.random() * evilPlayers.length)
+        const oberonUsername = evilPlayers.splice(oberonIndex, 1)[0]
+        state.users[oberonUsername].role = "Oberon"
+      }
 
       for (const username in state.users) {
         const user = state.users[username]
         let knowledge
-        if (user.role) {
+        if (user.role || user.alignment === "evil") {
           if (user.role === "Merlin") {
-            knowledge = state.usernames.filter(username => state.users[username].alignment === "evil")
-              .reduce<{ [username: string]: "evil" }>((players, username) => ({ ...players, [username]: "evil" }), {})
+            knowledge = state.usernames
+              .filter(knownUsername =>
+                state.users[knownUsername].alignment === "evil" &&
+                state.users[knownUsername].role !== "Mordred"
+              )
+              .reduce<{ [username: string]: "evil" }>(
+                (players, knownUsername) => ({ ...players, [knownUsername]: "evil" }),
+                {}
+              )
+          } else if (user.role === "Percival") {
+            knowledge = state.usernames
+              .filter(knownUsername =>
+                state.users[knownUsername].role === "Merlin" ||
+                state.users[knownUsername].role === "Morgana"
+              )
+              .reduce<{ [username: string]: "magical" }>(
+                (players, knownUsername) => ({ ...players, [knownUsername]: "magical" }),
+                {}
+              )
+          } else if (user.role === "Oberon") {
+            console.info("Sucks to be you, Oberon!")
+          } else {
+            knowledge = state.usernames
+              .filter(knownUsername =>
+                state.users[knownUsername].alignment === "evil" &&
+                state.users[knownUsername].role !== "Oberon" &&
+                knownUsername !== username
+              )
+              .reduce<{ [username: string]: "evil" }>(
+                (players, knownUsername) => ({ ...players, [knownUsername]: "evil" }),
+                {}
+              )
           }
+
+          user.knowledge = knowledge
         }
 
         const startGameMessage: StartGame = {

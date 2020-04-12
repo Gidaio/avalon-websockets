@@ -6,6 +6,12 @@ const loginServerMessagesDiv = document.getElementById("login-server-messages")!
 const waitingRoomSection = document.getElementById("waiting-room-section")! as HTMLDivElement
 const waitingRoomUsersDiv = document.getElementById("waiting-room-users")! as HTMLDivElement
 const waitingRoomReadyButton = document.getElementById("waiting-room-ready")! as HTMLButtonElement
+const waitingRoomRolesDiv = document.getElementById("waiting-room-roles")! as HTMLDivElement
+const usePercivalInput = document.getElementById("use-percival")! as HTMLInputElement
+const useMordredInput = document.getElementById("use-mordred")! as HTMLInputElement
+const useMorganaInput = document.getElementById("use-morgana")! as HTMLInputElement
+const useOberonInput = document.getElementById("use-oberon")! as HTMLInputElement
+const useHelmetLoversInput = document.getElementById("use-helmet-lovers")! as HTMLInputElement
 const waitingRoomStartGameButton = document.getElementById("waiting-room-start-game")! as HTMLButtonElement
 
 const pickQuestSection = document.getElementById("pick-quest-section")! as HTMLDivElement
@@ -13,6 +19,7 @@ const pickQuestResultsDiv = document.getElementById("pick-quest-results")! as HT
 const pickQuestPlayersDiv = document.getElementById("pick-quest-players")! as HTMLDivElement
 const pickQuestButton = document.getElementById("pick-quest-button")! as HTMLButtonElement
 const pickQuestKnowledgeDiv = document.getElementById("pick-quest-knowledge")! as HTMLDivElement
+const pickQuestEndGameButton = document.getElementById("pick-quest-end-game")! as HTMLButtonElement
 
 const questChoiceSection = document.getElementById("quest-choice-section")! as HTMLDivElement
 const questChoiceSuccessButton = document.getElementById("quest-choice-success")! as HTMLButtonElement
@@ -37,7 +44,7 @@ interface AppState {
   }
   pickQuestState?: {
     players: string[]
-    role: "good" | "evil" | "Merlin" | "the assassin"
+    role: "good" | "evil" | "Merlin" | "Percival" | "a helmet lover" | "the assassin" | "Mordred" | "Morgana" | "Oberon"
     knowledge?: {
       [username: string]: string
     }
@@ -74,6 +81,15 @@ loginButton.addEventListener("click", () => {
 
   socket.addEventListener("close", () => {
     console.warn("Server closed the socket!")
+    appState.currentState = "login"
+    appState.username = ""
+    appState.socket = null
+    appState.isAdmin = false
+    delete appState.loginState
+    delete appState.waitingRoomState
+    delete appState.pickQuestState
+
+    render()
   })
 
   socket.addEventListener("open", () => {
@@ -109,7 +125,14 @@ waitingRoomStartGameButton.addEventListener("click", () => {
     return
   }
 
-  send<RequestGameStart>({ type: "requestGameStart" })
+  send<RequestGameStart>({
+    type: "requestGameStart",
+    percival: usePercivalInput.checked,
+    mordred: useMordredInput.checked,
+    morgana: useMorganaInput.checked,
+    oberon: useOberonInput.checked,
+    helmetLovers: useHelmetLoversInput.checked
+  })
 })
 
 
@@ -147,6 +170,19 @@ questChoiceFailureButton.addEventListener("click", () => {
   }
 
   send<QuestChoice>({ type: "questChoice", choice: "failure" })
+})
+
+
+pickQuestEndGameButton.addEventListener("click", () => {
+  if (appState.currentState !== "pickQuest") {
+    console.warn("Invalid state to end the game!")
+  }
+
+  if (!appState.isAdmin) {
+    console.warn("Only the admin can end the game!")
+  }
+
+  send<RequestGameEnd>({ type: "requestGameEnd" })
 })
 
 
@@ -258,7 +294,10 @@ function handleSocketMessages(event: MessageEvent): void {
 function render(): void {
   loginSection.hidden = true
   waitingRoomSection.hidden = true
+  waitingRoomStartGameButton.hidden = true
+  waitingRoomRolesDiv.hidden = true
   pickQuestSection.hidden = true
+  pickQuestEndGameButton.hidden = true
   questChoiceSection.hidden = true
 
   switch (appState.currentState) {
@@ -273,6 +312,7 @@ function render(): void {
       waitingRoomSection.hidden = false
       if (appState.isAdmin) {
         waitingRoomStartGameButton.hidden = false
+        waitingRoomRolesDiv.hidden = false
       }
       if (appState.waitingRoomState) {
         const readyStates = appState.waitingRoomState.readyStates
@@ -289,6 +329,9 @@ function render(): void {
 
     case "pickQuest":
       pickQuestSection.hidden = false
+      if (appState.isAdmin) {
+        pickQuestEndGameButton.hidden = false
+      }
       if (appState.pickQuestState) {
         const pickQuestHTML = appState.pickQuestState.players
           .map(username => `<p><input type="checkbox" name="${username}">${username}</p>`)

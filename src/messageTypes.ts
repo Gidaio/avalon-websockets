@@ -31,7 +31,7 @@ interface ReadyStateChange {
 interface StartGame {
   type: "startGame"
   players: string[]
-  role: "good" | "evil" | "Merlin" | "the assassin"
+  role: "good" | "evil" | "Merlin" | "Percival" | "a helmet lover" | "the assassin" | "Mordred" | "Morgana" | "Oberon"
   knowledge?: {
     [username: string]: string
   }
@@ -53,7 +53,7 @@ interface QuestResults {
 
 // Client to server messages
 
-type ClientToServerMessage = LoginRequest | SetReadyState | RequestGameStart | PickQuest | QuestChoice
+type ClientToServerMessage = LoginRequest | SetReadyState | RequestGameStart | PickQuest | QuestChoice | RequestGameEnd
 
 interface LoginRequest {
   type: "loginRequest"
@@ -67,6 +67,11 @@ interface SetReadyState {
 
 interface RequestGameStart {
   type: "requestGameStart"
+  percival: boolean
+  mordred: boolean
+  morgana: boolean
+  oberon: boolean
+  helmetLovers: boolean
 }
 
 interface PickQuest {
@@ -77,4 +82,8 @@ interface PickQuest {
 interface QuestChoice {
   type: "questChoice"
   choice: "success" | "failure"
+}
+
+interface RequestGameEnd {
+  type: "requestGameEnd"
 }
