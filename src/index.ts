@@ -103,6 +103,7 @@ function handleNewConnection(socket: WebSocket): void {
         console.info(`Reconnecting ${message.username}...`)
         username = message.username
         const user = state.users[username]
+        user.socket = socket
         send<LoginAccepted>(socket, { type: "loginAccepted", username, admin: state.users[username].isAdmin })
         send<StartGame>(socket, {
           type: "startGame",
@@ -295,6 +296,10 @@ function handleNewConnection(socket: WebSocket): void {
   function handlePickingQuestMessage(message: ClientToServerMessage) {
     switch (message.type) {
       case "pickQuest":
+        if (message.players.length === 0) {
+          send<BadRequest>(socket, { type: "badRequest", error: "You must specify some players!" })
+        }
+
         state.state = "resolvingQuest"
         state.resolvingQuestState = {
           successes: 0,
